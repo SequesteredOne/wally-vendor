@@ -8,5 +8,6 @@ repository = "https://github.com/SequesteredOne/wally-vendor"
 readme = "README.md"
 
 [dependencies]
+anyhow = "1.0.99"
 clap = "4.5.45"
 serde = "1.0.219"
