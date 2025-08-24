@@ -1,0 +1,6 @@
+# Rust / Cargo
+/target/
+
+.vscode/
+
+.env
