@@ -9,4 +9,5 @@ install: build
 run *args:
     cargo run -- {{args}}
 
-    
+test: install
+    cd tests/example; wally install; wally-vendor sync-vendor --clean
