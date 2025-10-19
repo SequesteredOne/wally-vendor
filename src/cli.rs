@@ -41,4 +41,8 @@ pub struct SyncVendorArgs {
     /// Remove existing vendor directory before syncing
     #[arg(long)]
     pub clean: bool,
+
+    /// Mirror the Wally "_Index" layout instead of flattening
+    #[arg(long)]
+    pub mirror: bool,
 }
