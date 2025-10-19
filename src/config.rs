@@ -15,6 +15,7 @@ impl DepsConfig {
         let content = fs::read_to_string(path)
             .with_context(|| format!("Failed to read dependencies config from {:?}", path))?;
 
-        toml::from_str(&content).with_context(|| format!("Failed to parse wally-vendor.toml at {:?}", path))
+        toml::from_str(&content)
+            .with_context(|| format!("Failed to parse wally-vendor.toml at {:?}", path))
     }
 }
