@@ -1,15 +1,26 @@
 use crate::cli::SyncVendorArgs;
-use crate::config::DepsConfig;
+use crate::config::Config;
 use crate::utils;
 use anyhow::{Context, Result, bail};
+use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub fn execute(args: SyncVendorArgs) -> Result<()> {
-    let config = DepsConfig::load(&args.deps)?;
+    let config_path = find_config_path(args.deps)?;
+    let config = Config::load(&config_path)?;
 
-    if config.packages.is_empty() {
-        println!("No packages defined in wally-vendor.toml");
+    let packages_to_vendor: HashMap<String, String> = match config {
+        Config::Vendor(vendor_config) => vendor_config.packages,
+        Config::Wally(manifest) => {
+            let mut packages = HashMap::new();
+            packages.extend(manifest.dependencies);
+            packages
+        }
+    };
+
+    if packages_to_vendor.is_empty() {
+        println!("No packages to vendor.");
         return Ok(());
     }
 
@@ -24,7 +35,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
 
-    for (alias, package_spec) in &config.packages {
+    for (alias, package_spec) in &packages_to_vendor {
         match utils::find_wally_package(&args.packages_dir, package_spec) {
             Some(source_path) => {
                 if args.mirror {
@@ -44,7 +55,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     println!(
         "Successfully vendored {}/{} packages",
         packages_vendored,
-        config.packages.len()
+        packages_to_vendor.len()
     );
 
     if !missing_packages.is_empty() {
@@ -64,6 +75,27 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     }
 
     Ok(())
+}
+
+fn find_config_path(cli_path: Option<PathBuf>) -> Result<PathBuf> {
+    if let Some(path) = cli_path {
+        if !path.exists() {
+            bail!("Specified config file does not exist: {:?}", path);
+        }
+        return Ok(path);
+    }
+
+    let vendor_config = PathBuf::from("wally-vendor.toml");
+    if vendor_config.exists() {
+        return Ok(vendor_config);
+    }
+
+    let wally_config = PathBuf::from("wally.toml");
+    if wally_config.exists() {
+        return  Ok(wally_config);
+    }
+
+    bail!("Could not find a config file. Please specify one with `--deps` or create a `wally-vendor.toml` or `wally.toml` file");
 }
 
 fn copy_flattened(source_path: &Path, vendor_dir: &Path, alias: &str) -> Result<()> {

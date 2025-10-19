@@ -23,8 +23,8 @@ pub enum Commands {
 #[derive(Parser)]
 pub struct SyncVendorArgs {
     /// Path to dependency configuration file
-    #[arg(short, long, default_value = "wally-vendor.toml")]
-    pub deps: PathBuf,
+    #[arg(short, long)]
+    pub deps: Option<PathBuf>,
 
     /// Path to Wally packages directory
     #[arg(short, long, default_value = "Packages")]
