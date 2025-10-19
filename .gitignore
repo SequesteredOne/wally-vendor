@@ -4,3 +4,7 @@
 .vscode/
 
 .env
+
+# Example Wally packages
+tests/example/Packages
+tests/example/WallyVendor
