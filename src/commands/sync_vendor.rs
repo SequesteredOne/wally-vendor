@@ -1,7 +1,8 @@
 use crate::cli::SyncVendorArgs;
 use crate::config::DepsConfig;
 use crate::utils;
-use anyhow::{Context, Result};
+use anyhow::{Context, Result, bail};
+use std::fs;
 
 pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let config = DepsConfig::load(&args.deps)?;
@@ -9,6 +10,11 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     if config.packages.is_empty() {
         println!("No packages defined in wally-vendor.toml");
         return Ok(());
+    }
+
+    if args.clean && args.vendor_dir.exists() {
+        fs::remove_dir_all(&args.vendor_dir)
+            .with_context(|| format!("Failed to remove vendor directory {:?}", args.vendor_dir))?;
     }
 
     let mut packages_vendored = 0;
@@ -44,6 +50,13 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         }
         eprintln!();
         eprintln!("Hint: Try running `wally install` to fetch the missing dependnecies");
+
+        if args.strict {
+            bail!(
+                "Strict mode enabled: {} package(s) missing",
+                missing_packages.len()
+            );
+        }
     }
 
     Ok(())
