@@ -1,0 +1,44 @@
+use std::fs;
+use std::path::{Path, PathBuf};
+
+pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<PathBuf> {
+    let parts: Vec<&str> = package_spec.split("/").collect();
+    if parts.len() != 2 {
+        return None;
+    }
+
+    let scope = parts[0];
+    let name_with_version = parts[1];
+    let name = name_with_version
+        .split("@")
+        .next()
+        .unwrap_or(name_with_version);
+
+    let direct_path = packages_dir.join(name);
+    if direct_path.exists() && direct_path.is_dir() {
+        return Some(direct_path);
+    }
+
+    let index_dir = packages_dir.join("_Index");
+    if !index_dir.exists() {
+        return None;
+    }
+
+    let search_pattern = format!("{}_{}", scope, name);
+
+    if let Ok(entries) = fs::read_dir(&index_dir) {
+        for entry in entries.flatten() {
+            let entry_name = entry.file_name();
+            let entry_name_str = entry_name.to_string_lossy();
+
+            if entry_name_str.starts_with(&search_pattern) && entry_name_str.contains("@") {
+                let pkg_dir = entry.path().join(name);
+                if pkg_dir.exists() && pkg_dir.is_dir() {
+                    return Some(pkg_dir);
+                }
+            }
+        }
+    }
+
+    None
+}
