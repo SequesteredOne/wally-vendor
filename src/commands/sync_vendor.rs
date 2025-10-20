@@ -1,4 +1,4 @@
-use crate::cli::{SyncVendorArgs, Realm};
+use crate::cli::{Realm, SyncVendorArgs};
 use crate::config::Manifest;
 use crate::utils;
 use anyhow::{Context, Result, bail};
@@ -10,7 +10,9 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let realms = args.realms.clone();
 
     if realms.is_empty() {
-        println!("No realms specified to vendor. Use the --realm flag to select which dependencies to vendor.");
+        println!(
+            "No realms specified to vendor. Use the --realm flag to select which dependencies to vendor."
+        );
         return Ok(());
     }
 
@@ -27,10 +29,16 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
 
     if args.clean && args.vendor_dir.exists() {
         let mut dirs_to_clean = HashSet::new();
-        if realms.contains(&Realm::Shared) { dirs_to_clean.insert(shared_dest); }
-        if realms.contains(&Realm::Server) { dirs_to_clean.insert(server_dest); }
-        if realms.contains(&Realm::Dev) { dirs_to_clean.insert(dev_dest); }
-        
+        if realms.contains(&Realm::Shared) {
+            dirs_to_clean.insert(shared_dest);
+        }
+        if realms.contains(&Realm::Server) {
+            dirs_to_clean.insert(server_dest);
+        }
+        if realms.contains(&Realm::Dev) {
+            dirs_to_clean.insert(dev_dest);
+        }
+
         for dir in dirs_to_clean {
             if dir.exists() {
                 fs::remove_dir_all(dir)
@@ -60,7 +68,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         let (vendored, missing) = vendor_packages(
             &manifest.server_dependencies,
             &server_packages_dir,
-            server_dest
+            server_dest,
         )?;
         total_vendored += vendored;
         all_missing.extend(missing);
@@ -78,13 +86,12 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
 
     if total_dependencies == 0 {
         println!("No packages to vendor.");
-        return  Ok(());
+        return Ok(());
     }
 
     println!(
         "Successfully vendored {}/{} packages",
-        total_vendored,
-        total_dependencies
+        total_vendored, total_dependencies
     );
 
     if !all_missing.is_empty() {
