@@ -30,7 +30,7 @@ pub enum Commands {
 #[derive(Parser)]
 pub struct SyncVendorArgs {
     /// Path to dependency configuration file
-    #[arg(short, long)]
+    #[arg(short, long, default_value = "wally.toml")]
     pub deps: Option<PathBuf>,
 
     /// The dependency realms to vendor. Can be specified multiple times (ex. --realm Server --realm Dev --realm Shared to include all).
