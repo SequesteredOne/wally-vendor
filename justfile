@@ -10,4 +10,4 @@ run *args:
     cargo run -- {{args}}
 
 test: install
-    cd tests/example; wally install; wally-vendor sync-vendor --clean
+    cd tests/example; wally install; wally-vendor sync-vendor --realm server --realm shared --realm dev --clean
