@@ -1,5 +1,6 @@
 use crate::cli::{Realm, SyncVendorArgs};
 use crate::config::Manifest;
+use crate::lockfile::Lockfile;
 use crate::utils;
 use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet};
@@ -19,6 +20,15 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let config_path = find_config_path(&args.deps)?;
     let manifest = Manifest::load(&config_path)?;
 
+    let lockfile_path = PathBuf::from("wally.lock");
+    let lockfile = if lockfile_path.exists() {
+        Some(Lockfile::load(&lockfile_path)?)
+    } else {
+        println!("wally.lock not found, proceeding without it. Vendored packages may not be deterministic");
+        None
+    };
+    let package_versions = lockfile.as_ref().map(|l| l.get_package_versions());
+    
     let shared_dest = args.shared_dir.as_deref().unwrap_or(&args.vendor_dir);
     let server_dest = args.server_dir.as_deref().unwrap_or(&args.vendor_dir);
     let dev_dest = args.dev_dir.as_deref().unwrap_or(&args.vendor_dir);
@@ -56,7 +66,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             .with_context(|| format!("Failed to create vendor directory {:?}", shared_dest))?;
         total_dependencies += manifest.dependencies.len();
         let (vendored, missing) =
-            vendor_packages(&manifest.dependencies, &args.packages_dir, shared_dest)?;
+            vendor_packages(&manifest.dependencies, &args.packages_dir, shared_dest, package_versions.as_ref())?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -69,6 +79,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             &manifest.server_dependencies,
             &server_packages_dir,
             server_dest,
+            package_versions.as_ref(),
         )?;
         total_vendored += vendored;
         all_missing.extend(missing);
@@ -79,7 +90,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             .with_context(|| format!("Failed to create vendor directory {:?}", dev_dest))?;
         total_dependencies += manifest.dev_dependencies.len();
         let (vendored, missing) =
-            vendor_packages(&manifest.dev_dependencies, &dev_packages_dir, dev_dest)?;
+            vendor_packages(&manifest.dev_dependencies, &dev_packages_dir, dev_dest, package_versions.as_ref())?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -105,7 +116,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             "Vendored {}/{} packages",
             total_vendored, total_dependencies
         );
-        
+
         eprintln!();
         eprintln!("Hint: Try running `wally install` to fetch the missing dependnecies");
 
@@ -124,12 +135,25 @@ fn vendor_packages(
     dependencies: &HashMap<String, String>,
     source_base_dir: &Path,
     destination_dir: &Path,
+    package_versions: Option<&HashMap<String, String>>
 ) -> Result<(usize, Vec<(String, String)>)> {
     let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
 
     for (alias, package_spec) in dependencies {
-        match utils::find_wally_package(source_base_dir, package_spec) {
+        let package_name = package_spec.split("@").next().unwrap_or(&package_spec);
+
+        let final_spec = if let Some(versions) = package_versions {
+            if let Some(version) = versions.get(package_name) {
+                format!("{}@{}", package_name, version)
+            } else {
+                package_spec.clone()
+            }
+        } else {
+            package_spec.clone()
+        };
+
+        match utils::find_wally_package(source_base_dir, &final_spec) {
             Some(source_path) => {
                 copy_package(source_base_dir, &source_path, destination_dir, alias)?;
                 packages_vendored += 1;
