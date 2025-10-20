@@ -7,3 +7,9 @@ realm = "shared"
 [dependencies]
 promise = "evaera/promise@4.0.0"
 janitor = "howmanysmall/janitor@1.18.3"
+
+[server-dependencies]
+sworduh = "sequesteredone/sworduh@0.2.0-beta"
+
+[dev-dependencies]
+jest = "jsdotlua/jest@3.10.0"

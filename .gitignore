@@ -7,4 +7,6 @@
 
 # Example Wally packages
 tests/example/Packages
+tests/example/DevPackages
+tests/example/ServerPackages
 tests/example/WallyVendor
