@@ -40,11 +40,6 @@ pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<Pat
         .next()
         .unwrap_or(name_with_version);
 
-    let direct_path = packages_dir.join(name);
-    if direct_path.exists() && direct_path.is_dir() {
-        return Some(direct_path);
-    }
-
     let index_dir = packages_dir.join("_Index");
     if !index_dir.exists() {
         return None;
@@ -52,16 +47,15 @@ pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<Pat
 
     let search_pattern = format!("{}_{}", scope, name);
 
-    if let Ok(entries) = fs::read_dir(&index_dir) {
-        for entry in entries.flatten() {
-            let entry_name = entry.file_name();
-            let entry_name_str = entry_name.to_string_lossy();
+    let entries = fs::read_dir(index_dir).ok()?;
+    for entry in entries.flatten() {
+        let entry_name = entry.file_name();
+        let entry_name_str = entry_name.to_string_lossy();
 
-            if entry_name_str.starts_with(&search_pattern) && entry_name_str.contains("@") {
-                let pkg_dir = entry.path().join(name);
-                if pkg_dir.exists() && pkg_dir.is_dir() {
-                    return Some(pkg_dir);
-                }
+        if entry_name_str.starts_with(&search_pattern) {
+            let pkg_dir = entry.path().join(name);
+            if pkg_dir.is_dir() {
+                return Some(pkg_dir);
             }
         }
     }
