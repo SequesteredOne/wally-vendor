@@ -89,16 +89,23 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         return Ok(());
     }
 
-    println!(
-        "Successfully vendored {}/{} packages",
-        total_vendored, total_dependencies
-    );
-
-    if !all_missing.is_empty() {
+    if all_missing.is_empty() {
+        println!(
+            "Successfully vendored {}/{} packages",
+            total_vendored, total_dependencies
+        );
+    } else {
         eprintln!("Missing {} package(s):", all_missing.len());
         for (alias, spec) in &all_missing {
             eprintln!("    {} ({})", alias, spec);
         }
+        eprintln!();
+
+        eprintln!(
+            "Vendored {}/{} packages",
+            total_vendored, total_dependencies
+        );
+        
         eprintln!();
         eprintln!("Hint: Try running `wally install` to fetch the missing dependnecies");
 
