@@ -6,7 +6,10 @@
 .env
 
 # Example Wally packages
-tests/example/Packages
-tests/example/DevPackages
-tests/example/ServerPackages
+**/Packages
+**/DevPackages
+**/ServerPackages
 tests/example/WallyVendor
+tests/extreme-example/VendorDev
+tests/extreme-example/VendorShared
+tests/extreme-example/VendorServer
