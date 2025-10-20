@@ -1,47 +1,128 @@
-use crate::cli::SyncVendorArgs;
-use crate::config::Config;
+use crate::cli::{SyncVendorArgs, Realm};
+use crate::config::Manifest;
 use crate::utils;
 use anyhow::{Context, Result, bail};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
 pub fn execute(args: SyncVendorArgs) -> Result<()> {
-    let config_path = find_config_path(args.deps)?;
-    let config = Config::load(&config_path)?;
+    let realms = args.realms.clone();
 
-    let packages_to_vendor: HashMap<String, String> = match config {
-        Config::Vendor(vendor_config) => vendor_config.packages,
-        Config::Wally(manifest) => {
-            let mut packages = HashMap::new();
-            packages.extend(manifest.dependencies);
-            packages
-        }
-    };
-
-    if packages_to_vendor.is_empty() {
-        println!("No packages to vendor.");
+    if realms.is_empty() {
+        println!("No realms specified to vendor. Use the --realm flag to select which dependencies to vendor.");
         return Ok(());
     }
 
+    let config_path = find_config_path(&args.deps)?;
+    let manifest = Manifest::load(&config_path)?;
+
+    let shared_dest = args.shared_dir.as_deref().unwrap_or(&args.vendor_dir);
+    let server_dest = args.server_dir.as_deref().unwrap_or(&args.vendor_dir);
+    let dev_dest = args.dev_dir.as_deref().unwrap_or(&args.vendor_dir);
+
+    let packages_root = args.packages_dir.parent().unwrap_or_else(|| Path::new("."));
+    let server_packages_dir = packages_root.join("ServerPackages");
+    let dev_packages_dir = packages_root.join("DevPackages");
+
     if args.clean && args.vendor_dir.exists() {
-        fs::remove_dir_all(&args.vendor_dir)
-            .with_context(|| format!("Failed to remove vendor directory {:?}", args.vendor_dir))?;
+        let mut dirs_to_clean = HashSet::new();
+        if realms.contains(&Realm::Shared) { dirs_to_clean.insert(shared_dest); }
+        if realms.contains(&Realm::Server) { dirs_to_clean.insert(server_dest); }
+        if realms.contains(&Realm::Dev) { dirs_to_clean.insert(dev_dest); }
+        
+        for dir in dirs_to_clean {
+            if dir.exists() {
+                fs::remove_dir_all(dir)
+                    .with_context(|| format!("Failed to remove vendor directory {:?}", dir))?;
+            }
+        }
     }
 
-    fs::create_dir_all(&args.vendor_dir)
-        .with_context(|| format!("Failed to create vendor directory {:?}", args.vendor_dir))?;
+    let mut total_vendored = 0;
+    let mut all_missing = Vec::new();
+    let mut total_dependencies = 0;
 
+    if realms.contains(&Realm::Shared) {
+        fs::create_dir_all(shared_dest)
+            .with_context(|| format!("Failed to create vendor directory {:?}", shared_dest))?;
+        total_dependencies += manifest.dependencies.len();
+        let (vendored, missing) =
+            vendor_packages(&manifest.dependencies, &args.packages_dir, shared_dest, &args)?;
+        total_vendored += vendored;
+        all_missing.extend(missing);
+    }
+
+    if realms.contains(&Realm::Server) {
+        fs::create_dir_all(server_dest)
+            .with_context(|| format!("Failed to create vendor directory {:?}", server_dest))?;
+        total_dependencies += manifest.server_dependencies.len();
+        let (vendored, missing) = vendor_packages(
+            &manifest.server_dependencies,
+            &server_packages_dir,
+            server_dest,
+            &args,
+        )?;
+        total_vendored += vendored;
+        all_missing.extend(missing);
+    }
+
+    if realms.contains(&Realm::Dev) {
+        fs::create_dir_all(dev_dest)
+            .with_context(|| format!("Failed to create vendor directory {:?}", dev_dest))?;
+        total_dependencies += manifest.dev_dependencies.len();
+        let (vendored, missing) =
+            vendor_packages(&manifest.dev_dependencies, &dev_packages_dir, dev_dest, &args)?;
+        total_vendored += vendored;
+        all_missing.extend(missing);
+    }
+
+    if total_dependencies == 0 {
+        println!("No packages to vendor.");
+        return  Ok(());
+    }
+
+    println!(
+        "Successfully vendored {}/{} packages",
+        total_vendored,
+        total_dependencies
+    );
+
+    if !all_missing.is_empty() {
+        eprintln!("Missing {} package(s):", all_missing.len());
+        for (alias, spec) in &all_missing {
+            eprintln!("    {} ({})", alias, spec);
+        }
+        eprintln!();
+        eprintln!("Hint: Try running `wally install` to fetch the missing dependnecies");
+
+        if args.strict {
+            bail!(
+                "Strict mode enabled: {} package(s) missing",
+                all_missing.len()
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn vendor_packages(
+    dependencies: &HashMap<String, String>,
+    source_base_dir: &Path,
+    destination_dir: &Path,
+    args: &SyncVendorArgs,
+) -> Result<(usize, Vec<(String, String)>)> {
     let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
 
-    for (alias, package_spec) in &packages_to_vendor {
-        match utils::find_wally_package(&args.packages_dir, package_spec) {
+    for (alias, package_spec) in dependencies {
+        match utils::find_wally_package(source_base_dir, package_spec) {
             Some(source_path) => {
                 if args.mirror {
-                    copy_mirrored(&args.packages_dir, &source_path, &args.vendor_dir, alias)?;
+                    copy_mirrored(source_base_dir, &source_path, destination_dir, alias)?;
                 } else {
-                    copy_flattened(&source_path, &args.vendor_dir, alias)?;
+                    copy_flattened(&source_path, destination_dir, alias)?;
                 }
 
                 packages_vendored += 1;
@@ -52,37 +133,15 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         }
     }
 
-    println!(
-        "Successfully vendored {}/{} packages",
-        packages_vendored,
-        packages_to_vendor.len()
-    );
-
-    if !missing_packages.is_empty() {
-        eprintln!("Missing {} package(s):", missing_packages.len());
-        for (alias, spec) in &missing_packages {
-            eprintln!("    {} ({})", alias, spec);
-        }
-        eprintln!();
-        eprintln!("Hint: Try running `wally install` to fetch the missing dependnecies");
-
-        if args.strict {
-            bail!(
-                "Strict mode enabled: {} package(s) missing",
-                missing_packages.len()
-            );
-        }
-    }
-
-    Ok(())
+    Ok((packages_vendored, missing_packages))
 }
 
-fn find_config_path(cli_path: Option<PathBuf>) -> Result<PathBuf> {
+fn find_config_path(cli_path: &Option<PathBuf>) -> Result<PathBuf> {
     if let Some(path) = cli_path {
         if !path.exists() {
             bail!("Specified config file does not exist: {:?}", path);
         }
-        return Ok(path);
+        return Ok(path.clone());
     }
 
     let vendor_config = PathBuf::from("wally-vendor.toml");
@@ -92,10 +151,12 @@ fn find_config_path(cli_path: Option<PathBuf>) -> Result<PathBuf> {
 
     let wally_config = PathBuf::from("wally.toml");
     if wally_config.exists() {
-        return  Ok(wally_config);
+        return Ok(wally_config);
     }
 
-    bail!("Could not find a config file. Please specify one with `--deps` or create a `wally-vendor.toml` or `wally.toml` file");
+    bail!(
+        "Could not find a config file. Please specify one with `--deps` or create a `wally-vendor.toml` or `wally.toml` file"
+    );
 }
 
 fn copy_flattened(source_path: &Path, vendor_dir: &Path, alias: &str) -> Result<()> {

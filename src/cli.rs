@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand};
+use clap::{Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -14,6 +14,13 @@ pub struct Cli {
     pub command: Commands,
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, PartialOrd, Ord, ValueEnum, Debug)]
+pub enum Realm {
+    Shared,
+    Server,
+    Dev,
+}
+
 #[derive(Subcommand)]
 pub enum Commands {
     #[command(name = "sync-vendor")]
@@ -26,6 +33,10 @@ pub struct SyncVendorArgs {
     #[arg(short, long)]
     pub deps: Option<PathBuf>,
 
+    /// The dependency realms to vendor. Can be specified multiple times (ex. --realm Server --realm Dev --realm Shared to include all).
+    #[arg(long = "realm", value_enum)]
+    pub realms: Vec<Realm>,
+
     /// Path to Wally packages directory
     #[arg(short, long, default_value = "Packages")]
     pub packages_dir: PathBuf,
@@ -33,6 +44,18 @@ pub struct SyncVendorArgs {
     /// Path to vendor output directory
     #[arg(short, long, default_value = "WallyVendor")]
     pub vendor_dir: PathBuf,
+
+    /// Output directory for `shared` dependencies.
+    #[arg(long)]
+    pub shared_dir: Option<PathBuf>,
+
+    /// Output directory for `server` dependencies.
+    #[arg(long)]
+    pub server_dir: Option<PathBuf>,
+
+    /// Output directory for `dev` dependencies.
+    #[arg(long)]
+    pub dev_dir: Option<PathBuf>,
 
     /// Fail if any required dependency is missing
     #[arg(short, long)]
