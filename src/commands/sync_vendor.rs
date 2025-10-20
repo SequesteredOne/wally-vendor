@@ -48,7 +48,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             .with_context(|| format!("Failed to create vendor directory {:?}", shared_dest))?;
         total_dependencies += manifest.dependencies.len();
         let (vendored, missing) =
-            vendor_packages(&manifest.dependencies, &args.packages_dir, shared_dest, &args)?;
+            vendor_packages(&manifest.dependencies, &args.packages_dir, shared_dest)?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -60,8 +60,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         let (vendored, missing) = vendor_packages(
             &manifest.server_dependencies,
             &server_packages_dir,
-            server_dest,
-            &args,
+            server_dest
         )?;
         total_vendored += vendored;
         all_missing.extend(missing);
@@ -72,7 +71,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             .with_context(|| format!("Failed to create vendor directory {:?}", dev_dest))?;
         total_dependencies += manifest.dev_dependencies.len();
         let (vendored, missing) =
-            vendor_packages(&manifest.dev_dependencies, &dev_packages_dir, dev_dest, &args)?;
+            vendor_packages(&manifest.dev_dependencies, &dev_packages_dir, dev_dest)?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -111,7 +110,6 @@ fn vendor_packages(
     dependencies: &HashMap<String, String>,
     source_base_dir: &Path,
     destination_dir: &Path,
-    args: &SyncVendorArgs,
 ) -> Result<(usize, Vec<(String, String)>)> {
     let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
@@ -119,12 +117,7 @@ fn vendor_packages(
     for (alias, package_spec) in dependencies {
         match utils::find_wally_package(source_base_dir, package_spec) {
             Some(source_path) => {
-                if args.mirror {
-                    copy_mirrored(source_base_dir, &source_path, destination_dir, alias)?;
-                } else {
-                    copy_flattened(&source_path, destination_dir, alias)?;
-                }
-
+                copy_package(source_base_dir, &source_path, destination_dir, alias)?;
                 packages_vendored += 1;
             }
             None => {
@@ -159,14 +152,7 @@ fn find_config_path(cli_path: &Option<PathBuf>) -> Result<PathBuf> {
     );
 }
 
-fn copy_flattened(source_path: &Path, vendor_dir: &Path, alias: &str) -> Result<()> {
-    let vendor_target = vendor_dir.join(alias);
-
-    utils::copy_dir_recursive(source_path, &vendor_target)
-        .with_context(|| format!("Failed to vendor {} from {:?}", alias, source_path))
-}
-
-fn copy_mirrored(
+fn copy_package(
     packages_dir: &Path,
     source_path: &Path,
     vendor_dir: &Path,
