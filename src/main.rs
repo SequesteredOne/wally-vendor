@@ -1,6 +1,7 @@
 mod cli;
 mod commands;
 mod config;
+mod lockfile;
 mod utils;
 
 use anyhow::Result;
