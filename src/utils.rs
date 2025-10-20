@@ -35,24 +35,31 @@ pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<Pat
 
     let scope = parts[0];
     let name_with_version = parts[1];
-    let name = name_with_version
-        .split("@")
-        .next()
-        .unwrap_or(name_with_version);
+    let (name, version) = match name_with_version.split_once("@") {
+        Some((name, version)) => (name, Some(version)),
+        None => (name_with_version, None),
+    };
 
     let index_dir = packages_dir.join("_Index");
     if !index_dir.exists() {
         return None;
     }
 
-    let search_pattern = format!("{}_{}", scope, name);
+    let search_prefix = format!("{}_{}", scope, name);
 
     let entries = fs::read_dir(index_dir).ok()?;
     for entry in entries.flatten() {
         let entry_name = entry.file_name();
         let entry_name_str = entry_name.to_string_lossy();
 
-        if entry_name_str.starts_with(&search_pattern) {
+        let matches = if let Some(version) = version {
+            let search_pattern = format!("{}@{}", search_prefix, version);
+            entry_name_str.starts_with(&search_pattern)
+        } else {
+            entry_name_str.starts_with(&search_prefix)
+        };
+
+        if matches {
             let pkg_dir = entry.path().join(name);
             if pkg_dir.is_dir() {
                 return Some(pkg_dir);
