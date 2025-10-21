@@ -14,3 +14,12 @@ test: install
 
 extreme-test: install
     cd tests/extreme-example; wally install; wally-vendor sync-vendor --realm server --realm shared --realm dev --server-dir VendorServer --shared-dir VendorShared --dev-dir VendorDev --clean --strict
+
+setup-benchmark: install
+    cd tests/extreme-example; wally install
+
+bench-clean: setup-benchmark
+    cd tests/extreme-example; hyperfine --time-unit millisecond --export-markdown ../../benchmarks/clean.md 'wally-vendor sync-vendor --realm server --realm shared --realm dev --server-dir VendorServer --shared-dir VendorShared --dev-dir VendorDev --clean --strict'
+
+bench-no-clean: setup-benchmark
+    cd tests/extreme-example; wally-vendor sync-vendor --realm server --realm shared --realm dev --server-dir VendorServer --shared-dir VendorShared --dev-dir VendorDev --strict; hyperfine --time-unit millisecond --export-markdown ../../benchmarks/pre-vendored-no-clean.md 'wally-vendor sync-vendor --realm server --realm shared --realm dev --server-dir VendorServer --shared-dir VendorShared --dev-dir VendorDev --strict'

@@ -10,6 +10,7 @@ readme = "README.md"
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.49", features = ["derive"]}
+hyperfine = "1.19.0"
 just = "1.43.0"
 semver = "1.0.27"
 serde = { version = "1.0.228", features = ["derive"] }
