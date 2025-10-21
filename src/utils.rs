@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use semver::{Version, VersionReq};
 use std::fs;
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
@@ -35,7 +36,7 @@ pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<Pat
 
     let scope = parts[0];
     let name_with_version = parts[1];
-    let (name, version) = match name_with_version.split_once("@") {
+    let (name, version_req_str) = match name_with_version.split_once("@") {
         Some((name, version)) => (name, Some(version)),
         None => (name_with_version, None),
     };
@@ -46,26 +47,51 @@ pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<Pat
     }
 
     let search_prefix = format!("{}_{}", scope, name);
+    let mut best_match: Option<(Version, PathBuf)> = None;
 
-    let entries = fs::read_dir(index_dir).ok()?;
+    let entries = match fs::read_dir(&index_dir) {
+        Ok(entries) => entries,
+        Err(e) => {
+            eprintln!(
+                "Warning: Could not read Wally packages index at {:?}: {}",
+                index_dir, e
+            );
+            return None;
+        }
+    };
+
     for entry in entries.flatten() {
         let entry_name = entry.file_name();
         let entry_name_str = entry_name.to_string_lossy();
 
-        let matches = if let Some(version) = version {
-            let search_pattern = format!("{}@{}", search_prefix, version);
-            entry_name_str.starts_with(&search_pattern)
-        } else {
-            entry_name_str.starts_with(&search_prefix)
+        if !entry_name_str.starts_with(&search_prefix) {
+            continue;
+        }
+
+        let version_part = match entry_name_str.split_once("@") {
+            Some((_, part)) => part,
+            None => continue,
         };
 
-        if matches {
-            let pkg_dir = entry.path().join(name);
-            if pkg_dir.is_dir() {
-                return Some(pkg_dir);
+        if let Ok(installed_version) = Version::parse(version_part) {
+            let req_matches = match version_req_str {
+                Some(req_str) => VersionReq::parse(req_str)
+                    .map(|req| req.matches(&installed_version))
+                    .unwrap_or(false),
+                None => true,
+            };
+
+            if req_matches {
+                if let Some((ref best_version, _)) = best_match {
+                    if installed_version > *best_version {
+                        best_match = Some((installed_version, entry.path()));
+                    }
+                } else {
+                    best_match = Some((installed_version, entry.path()));
+                }
             }
         }
     }
 
-    None
+    best_match.map(|(_, path)| path)
 }
