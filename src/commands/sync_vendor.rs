@@ -219,11 +219,13 @@ fn copy_package(
         .with_context(|| "Failed to create relative path for mirrored package")?;
 
     let vendor_target = vendor_dir.join(relative_path);
-    if let Some(parent) = vendor_target.parent() {
-        fs::create_dir_all(parent)?;
-    }
 
-    utils::copy_dir_recursive(source_path, &vendor_target)?;
+    if !vendor_target.exists() {
+        if let Some(parent) = vendor_target.parent() {
+            fs::create_dir_all(parent)?;
+        }
+        utils::copy_dir_recursive(source_path, &vendor_target)?;
+    }
 
     let redirector_lua = packages_dir.join(format!("{}.lua", alias));
     let redirector_luau = packages_dir.join(format!("{}.luau", alias));
