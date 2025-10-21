@@ -41,7 +41,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let server_packages_dir = packages_root.join("ServerPackages");
     let dev_packages_dir = packages_root.join("DevPackages");
 
-    if args.clean && args.vendor_dir.exists() {
+    if args.clean {
         let mut dirs_to_clean = HashSet::new();
         if realms.contains(&Realm::Shared) {
             dirs_to_clean.insert(shared_dest);
