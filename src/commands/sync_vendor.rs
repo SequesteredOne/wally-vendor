@@ -24,11 +24,13 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let lockfile = if lockfile_path.exists() {
         Some(Lockfile::load(&lockfile_path)?)
     } else {
-        println!("wally.lock not found, proceeding without it. Vendored packages may not be deterministic");
+        println!(
+            "wally.lock not found, proceeding without it. Vendored packages may not be deterministic"
+        );
         None
     };
     let package_versions = lockfile.as_ref().map(|l| l.get_package_versions());
-    
+
     let shared_dest = args.shared_dir.as_deref().unwrap_or(&args.vendor_dir);
     let server_dest = args.server_dir.as_deref().unwrap_or(&args.vendor_dir);
     let dev_dest = args.dev_dir.as_deref().unwrap_or(&args.vendor_dir);
@@ -65,8 +67,12 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         fs::create_dir_all(shared_dest)
             .with_context(|| format!("Failed to create vendor directory {:?}", shared_dest))?;
         total_dependencies += manifest.dependencies.len();
-        let (vendored, missing) =
-            vendor_packages(&manifest.dependencies, &args.packages_dir, shared_dest, package_versions.as_ref())?;
+        let (vendored, missing) = vendor_packages(
+            &manifest.dependencies,
+            &args.packages_dir,
+            shared_dest,
+            package_versions.as_ref(),
+        )?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -89,8 +95,12 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         fs::create_dir_all(dev_dest)
             .with_context(|| format!("Failed to create vendor directory {:?}", dev_dest))?;
         total_dependencies += manifest.dev_dependencies.len();
-        let (vendored, missing) =
-            vendor_packages(&manifest.dev_dependencies, &dev_packages_dir, dev_dest, package_versions.as_ref())?;
+        let (vendored, missing) = vendor_packages(
+            &manifest.dev_dependencies,
+            &dev_packages_dir,
+            dev_dest,
+            package_versions.as_ref(),
+        )?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -135,7 +145,7 @@ fn vendor_packages(
     dependencies: &HashMap<String, String>,
     source_base_dir: &Path,
     destination_dir: &Path,
-    package_versions: Option<&HashMap<String, String>>
+    package_versions: Option<&HashMap<String, String>>,
 ) -> Result<(usize, Vec<(String, String)>)> {
     let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
