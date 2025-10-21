@@ -1,6 +1,8 @@
 use anyhow::{Context, Result};
 use semver::{Version, VersionReq};
 use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
 use std::path::{Path, PathBuf};
 use walkdir::WalkDir;
 
@@ -19,6 +21,13 @@ pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
             if let Some(parent) = target_path.parent() {
                 fs::create_dir_all(parent)?;
             }
+
+            if target_path.exists() {
+                if are_files_equal(entry.path(), &target_path)? {
+                    continue;
+                }
+            }
+
             fs::copy(entry.path(), &target_path).with_context(|| {
                 format!("Failed to copy {:?} to {:?}", entry.path(), target_path)
             })?;
@@ -94,4 +103,36 @@ pub fn find_wally_package(packages_dir: &Path, package_spec: &str) -> Option<Pat
     }
 
     best_match.map(|(_, path)| path)
+}
+
+fn are_files_equal(path1: &Path, path2: &Path) -> Result<bool> {
+    let metadata1 = std::fs::metadata(path1)?;
+    let metadata2 = std::fs::metadata(path2)?;
+
+    if metadata1.len() != metadata2.len() {
+        return Ok(false);
+    }
+
+    let file1 = File::open(path1)?;
+    let file2 = File::open(path2)?;
+
+    let mut reader1 = BufReader::with_capacity(8192, file1);
+    let mut reader2 = BufReader::with_capacity(8192, file2);
+
+    loop {
+        let buf1 = reader1.fill_buf()?;
+        let buf2 = reader2.fill_buf()?;
+
+        if buf1.is_empty() && buf2.is_empty() {
+            return Ok(true);
+        }
+
+        let len = buf1.len().min(buf2.len());
+        if buf1[..len] != buf2[..len] {
+            return Ok(false);
+        }
+
+        reader1.consume(len);
+        reader2.consume(len);
+    }
 }
