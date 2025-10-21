@@ -1128,6 +1128,7 @@ dependencies = [
  "anyhow",
  "clap",
  "just",
+ "semver",
  "serde",
  "toml",
  "walkdir",
