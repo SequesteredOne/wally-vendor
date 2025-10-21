@@ -23,3 +23,4 @@ bench-clean: setup-benchmark
 
 bench-no-clean: setup-benchmark
     cd tests/extreme-example; wally-vendor sync-vendor --realm server --realm shared --realm dev --server-dir VendorServer --shared-dir VendorShared --dev-dir VendorDev --strict; hyperfine --time-unit millisecond --export-markdown ../../benchmarks/pre-vendored-no-clean.md 'wally-vendor sync-vendor --realm server --realm shared --realm dev --server-dir VendorServer --shared-dir VendorShared --dev-dir VendorDev --strict'
+    
