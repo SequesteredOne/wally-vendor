@@ -6,8 +6,10 @@ use anyhow::{Context, Result, bail};
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::time::Instant;
 
 pub fn execute(args: SyncVendorArgs) -> Result<()> {
+    let start = Instant::now();
     let realms = args.realms.clone();
 
     if realms.is_empty() {
@@ -110,10 +112,14 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         return Ok(());
     }
 
+    let duration = start.elapsed();
+
     if all_missing.is_empty() {
         println!(
-            "Successfully vendored {}/{} packages",
-            total_vendored, total_dependencies
+            "Successfully vendored {}/{} packages in {}ms",
+            total_vendored,
+            total_dependencies,
+            duration.as_millis()
         );
     } else {
         eprintln!("Missing {} package(s):", all_missing.len());
@@ -123,8 +129,10 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         eprintln!();
 
         eprintln!(
-            "Vendored {}/{} packages",
-            total_vendored, total_dependencies
+            "Vendored {}/{} packages in {}",
+            total_vendored,
+            total_dependencies,
+            duration.as_millis()
         );
 
         eprintln!();
