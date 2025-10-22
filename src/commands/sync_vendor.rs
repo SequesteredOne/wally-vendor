@@ -3,12 +3,13 @@ use crate::config::Manifest;
 use crate::lockfile::Lockfile;
 use crate::utils;
 use anyhow::{Context, Result, bail};
+use futures::future::join_all;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-pub fn execute(args: SyncVendorArgs) -> Result<()> {
+pub async fn execute(args: SyncVendorArgs) -> Result<()> {
     let start = Instant::now();
     let realms = args.realms.clone();
 
@@ -66,7 +67,8 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let mut total_dependencies = 0;
 
     if realms.contains(&Realm::Shared) {
-        fs::create_dir_all(shared_dest)
+        tokio::fs::create_dir_all(shared_dest)
+            .await
             .with_context(|| format!("Failed to create vendor directory {:?}", shared_dest))?;
         total_dependencies += manifest.dependencies.len();
         let (vendored, missing) = vendor_packages(
@@ -74,13 +76,15 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             &args.packages_dir,
             shared_dest,
             package_versions.as_ref(),
-        )?;
+        )
+        .await?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
 
     if realms.contains(&Realm::Server) {
-        fs::create_dir_all(server_dest)
+        tokio::fs::create_dir_all(server_dest)
+            .await
             .with_context(|| format!("Failed to create vendor directory {:?}", server_dest))?;
         total_dependencies += manifest.server_dependencies.len();
         let (vendored, missing) = vendor_packages(
@@ -88,13 +92,15 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             &server_packages_dir,
             server_dest,
             package_versions.as_ref(),
-        )?;
+        )
+        .await?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
 
     if realms.contains(&Realm::Dev) {
-        fs::create_dir_all(dev_dest)
+        tokio::fs::create_dir_all(dev_dest)
+            .await
             .with_context(|| format!("Failed to create vendor directory {:?}", dev_dest))?;
         total_dependencies += manifest.dev_dependencies.len();
         let (vendored, missing) = vendor_packages(
@@ -102,7 +108,8 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
             &dev_packages_dir,
             dev_dest,
             package_versions.as_ref(),
-        )?;
+        )
+        .await?;
         total_vendored += vendored;
         all_missing.extend(missing);
     }
@@ -111,6 +118,8 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         println!("No packages to vendor.");
         return Ok(());
     }
+
+    all_missing.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
 
     let duration = start.elapsed();
 
@@ -129,7 +138,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         eprintln!();
 
         eprintln!(
-            "Vendored {}/{} packages in {}",
+            "Vendored {}/{} packages in {}ms",
             total_vendored,
             total_dependencies,
             duration.as_millis()
@@ -149,38 +158,58 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     Ok(())
 }
 
-fn vendor_packages(
+async fn vendor_packages(
     dependencies: &HashMap<String, String>,
     source_base_dir: &Path,
     destination_dir: &Path,
     package_versions: Option<&HashMap<String, String>>,
 ) -> Result<(usize, Vec<(String, String)>)> {
-    let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
+    let mut copy_operations: HashMap<PathBuf, Vec<String>> = HashMap::new();
 
     for (alias, package_spec) in dependencies {
-        let package_name = package_spec.split("@").next().unwrap_or(&package_spec);
+        let package_name = package_spec.split("@").next().unwrap_or(package_spec);
 
         let final_spec = if let Some(versions) = package_versions {
-            if let Some(version) = versions.get(package_name) {
-                format!("{}@{}", package_name, version)
-            } else {
-                package_spec.clone()
-            }
+            versions
+                .get(package_name)
+                .map(|version| format!("{}@{}", package_name, version))
+                .unwrap_or_else(|| package_spec.clone())
         } else {
             package_spec.clone()
         };
 
         match utils::find_wally_package(source_base_dir, &final_spec) {
             Some(source_path) => {
-                copy_package(source_base_dir, &source_path, destination_dir, alias)?;
-                packages_vendored += 1;
+                copy_operations
+                    .entry(source_path)
+                    .or_insert_with(Vec::new)
+                    .push(alias.clone());
             }
             None => {
                 missing_packages.push((alias.clone(), package_spec.clone()));
             }
         }
     }
+
+    let mut tasks = Vec::new();
+    for (source_path, aliases) in copy_operations {
+        let source_base_dir = source_base_dir.to_path_buf();
+        let destination_dir = destination_dir.to_path_buf();
+        tasks.push(tokio::task::spawn(async move {
+            copy_package(&source_base_dir, &source_path, &destination_dir, &aliases).await
+        }));
+    }
+
+    let copy_results = join_all(tasks).await;
+
+    for result in copy_results {
+        if let Err(e) = result.unwrap() {
+            eprintln!("A package copy operation failed: {:?}", e);
+        }
+    }
+
+    let packages_vendored = dependencies.len() - missing_packages.len();
 
     Ok((packages_vendored, missing_packages))
 }
@@ -208,11 +237,11 @@ fn find_config_path(cli_path: &Option<PathBuf>) -> Result<PathBuf> {
     );
 }
 
-fn copy_package(
+async fn copy_package(
     packages_dir: &Path,
     source_path: &Path,
     vendor_dir: &Path,
-    alias: &str,
+    aliases: &[String],
 ) -> Result<()> {
     let relative_path = source_path
         .strip_prefix(packages_dir)
@@ -222,24 +251,28 @@ fn copy_package(
 
     if !vendor_target.exists() {
         if let Some(parent) = vendor_target.parent() {
-            fs::create_dir_all(parent)?;
+            tokio::fs::create_dir_all(parent).await?;
         }
-        utils::copy_dir_recursive(source_path, &vendor_target)?;
+        utils::copy_dir_recursive(source_path, &vendor_target).await?;
     }
 
-    let redirector_lua = packages_dir.join(format!("{}.lua", alias));
-    let redirector_luau = packages_dir.join(format!("{}.luau", alias));
+    for alias in aliases {
+        let redirector_lua = packages_dir.join(format!("{}.lua", alias));
+        let redirector_luau = packages_dir.join(format!("{}.luau", alias));
 
-    if redirector_lua.exists() && redirector_lua.is_file() {
-        fs::copy(
-            &redirector_lua,
-            vendor_dir.join(redirector_lua.file_name().unwrap()),
-        )?;
-    } else if redirector_luau.exists() && redirector_luau.is_file() {
-        fs::copy(
-            &redirector_luau,
-            vendor_dir.join(redirector_luau.file_name().unwrap()),
-        )?;
+        if redirector_lua.is_file() {
+            tokio::fs::copy(
+                &redirector_lua,
+                vendor_dir.join(redirector_lua.file_name().unwrap()),
+            )
+            .await?;
+        } else if redirector_luau.is_file() {
+            tokio::fs::copy(
+                &redirector_luau,
+                vendor_dir.join(redirector_luau.file_name().unwrap()),
+            )
+            .await?;
+        }
     }
 
     Ok(())

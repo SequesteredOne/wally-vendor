@@ -1,33 +1,48 @@
 use anyhow::{Context, Result};
+use futures::future::try_join_all;
 use semver::{Version, VersionReq};
 use std::fs;
 use std::path::{Path, PathBuf};
-use walkdir::WalkDir;
+use tokio::fs as async_fs;
 
-pub fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
-    fs::create_dir_all(dst).with_context(|| format!("Failed to create directory {:?}", dst))?;
+pub async fn copy_dir_recursive(src: &Path, dst: &Path) -> Result<()> {
+    async_fs::create_dir_all(dst)
+        .await
+        .with_context(|| format!("Failed to create directory {:?}", dst))?;
 
-    for entry in WalkDir::new(src).min_depth(1) {
-        let entry = entry?;
-        let relative_path = entry.path().strip_prefix(src)?;
-        let target_path = dst.join(relative_path);
+    let mut dir_stack = vec![(src.to_path_buf(), dst.to_path_buf())];
 
-        if entry.file_type().is_dir() {
-            fs::create_dir_all(&target_path)
-                .with_context(|| format!("Failed to create directory {:?}", target_path))?;
-        } else {
-            if let Some(parent) = target_path.parent() {
-                fs::create_dir_all(parent)?;
+    while let Some((cur_src, cur_dst)) = dir_stack.pop() {
+        let mut entries = async_fs::read_dir(&cur_src)
+            .await
+            .with_context(|| format!("Failed to read directory {:?}", cur_src))?;
+
+        let mut tasks = Vec::new();
+
+        while let Some(entry) = entries.next_entry().await? {
+            let entry_path = entry.path();
+            let target_path = cur_dst.join(entry.file_name());
+            let file_type = entry.file_type().await?;
+
+            if file_type.is_dir() {
+                async_fs::create_dir_all(&target_path).await?;
+                dir_stack.push((entry_path, target_path));
+            } else {
+                if target_path.exists() && should_skip_copy(&entry_path, &target_path)? {
+                    continue;
+                }
+                tasks.push(tokio::spawn(async move {
+                    async_fs::copy(&entry_path, &target_path)
+                        .await
+                        .map(|_| ())
+                        .with_context(|| {
+                            format!("Failed to copy {:?} to {:?}", entry_path, target_path)
+                        })
+                }));
             }
-
-            if target_path.exists() && should_skip_copy(entry.path(), &target_path)? {
-                continue;
-            }
-
-            fs::copy(entry.path(), &target_path).with_context(|| {
-                format!("Failed to copy {:?} to {:?}", entry.path(), target_path)
-            })?;
         }
+
+        try_join_all(tasks).await?;
     }
 
     Ok(())
