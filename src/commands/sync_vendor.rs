@@ -10,6 +10,15 @@ use std::time::Instant;
 use rayon::prelude::*;
 
 pub fn execute(args: SyncVendorArgs) -> Result<()> {
+    if let Some(jobs) = args.jobs {
+        if jobs > 0 {
+            rayon::ThreadPoolBuilder::new()
+                .num_threads(jobs)
+                .build_global()
+                .with_context(|| "Failed to initialize global thread pool")?;
+        }
+    }
+
     let start = Instant::now();
     let realms = args.realms.clone();
 
