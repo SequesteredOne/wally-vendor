@@ -7,6 +7,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use rayon::prelude::*;
 
 pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let start = Instant::now();
@@ -112,6 +113,8 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         return Ok(());
     }
 
+    all_missing.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+    
     let duration = start.elapsed();
 
     if all_missing.is_empty() {
@@ -129,7 +132,7 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
         eprintln!();
 
         eprintln!(
-            "Vendored {}/{} packages in {}",
+            "Vendored {}/{} packages in {}ms",
             total_vendored,
             total_dependencies,
             duration.as_millis()
@@ -155,32 +158,45 @@ fn vendor_packages(
     destination_dir: &Path,
     package_versions: Option<&HashMap<String, String>>,
 ) -> Result<(usize, Vec<(String, String)>)> {
-    let mut packages_vendored = 0;
     let mut missing_packages = Vec::new();
+    let mut copy_operations = HashMap::new(); // Use HashMap to deduplicate by source path
 
     for (alias, package_spec) in dependencies {
-        let package_name = package_spec.split("@").next().unwrap_or(&package_spec);
+        let package_name = package_spec.split('@').next().unwrap_or(package_spec);
 
         let final_spec = if let Some(versions) = package_versions {
-            if let Some(version) = versions.get(package_name) {
-                format!("{}@{}", package_name, version)
-            } else {
-                package_spec.clone()
-            }
+            versions.get(package_name)
+                .map(|version| format!("{}@{}", package_name, version))
+                .unwrap_or_else(|| package_spec.clone())
         } else {
             package_spec.clone()
         };
 
         match utils::find_wally_package(source_base_dir, &final_spec) {
             Some(source_path) => {
-                copy_package(source_base_dir, &source_path, destination_dir, alias)?;
-                packages_vendored += 1;
+                copy_operations.entry(source_path).or_insert_with(Vec::new).push(alias.clone());
             }
             None => {
                 missing_packages.push((alias.clone(), package_spec.clone()));
             }
         }
     }
+
+    let copy_results: Vec<Result<()>> = copy_operations
+        .par_iter()
+        .map(|(source_path, aliases)| {
+            copy_package(source_base_dir, source_path, destination_dir, aliases)?;
+            Ok(())
+        })
+        .collect();
+
+    for result in copy_results {
+        if let Err(e) = result {
+            eprintln!("A package copy operation failed: {:?}", e);
+        }
+    }
+        
+    let packages_vendored = dependencies.len() - missing_packages.len();
 
     Ok((packages_vendored, missing_packages))
 }
@@ -212,7 +228,7 @@ fn copy_package(
     packages_dir: &Path,
     source_path: &Path,
     vendor_dir: &Path,
-    alias: &str,
+    aliases: &[String],
 ) -> Result<()> {
     let relative_path = source_path
         .strip_prefix(packages_dir)
@@ -227,19 +243,21 @@ fn copy_package(
         utils::copy_dir_recursive(source_path, &vendor_target)?;
     }
 
-    let redirector_lua = packages_dir.join(format!("{}.lua", alias));
-    let redirector_luau = packages_dir.join(format!("{}.luau", alias));
+    for alias in aliases {
+        let redirector_lua = packages_dir.join(format!("{}.lua", alias));
+        let redirector_luau = packages_dir.join(format!("{}.luau", alias));
 
-    if redirector_lua.exists() && redirector_lua.is_file() {
-        fs::copy(
-            &redirector_lua,
-            vendor_dir.join(redirector_lua.file_name().unwrap()),
-        )?;
-    } else if redirector_luau.exists() && redirector_luau.is_file() {
-        fs::copy(
-            &redirector_luau,
-            vendor_dir.join(redirector_luau.file_name().unwrap()),
-        )?;
+        if redirector_lua.exists() && redirector_lua.is_file() {
+            fs::copy(
+                &redirector_lua,
+                vendor_dir.join(redirector_lua.file_name().unwrap()),
+            )?;
+        } else if redirector_luau.exists() && redirector_luau.is_file() {
+            fs::copy(
+                &redirector_luau,
+                vendor_dir.join(redirector_luau.file_name().unwrap()),
+            )?;
+        }
     }
 
     Ok(())
