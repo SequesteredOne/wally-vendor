@@ -1,5 +1,5 @@
 use crate::cli::{Realm, SyncArgs};
-use crate::config::Manifest;
+use crate::config::Config;
 use crate::lockfile::Lockfile;
 use crate::utils;
 use anyhow::{Context, Result, bail};
@@ -22,13 +22,21 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     let start = Instant::now();
 
     let config_path = find_config_path(&args.deps)?;
-    let manifest = Manifest::load(&config_path)?;
+    let config = Config::load(&config_path)
+        .with_context(|| format!("Failed to load config from {:?}", config_path))?;
+    let manifest = config.manifest;
 
     let mut realms = args.realms.clone();
     if realms.is_empty() {
-        if !manifest.dependencies.is_empty() { realms.push(Realm::Shared); }
-        if !manifest.server_dependencies.is_empty() { realms.push(Realm::Server); }
-        if !manifest.dev_dependencies.is_empty() { realms.push(Realm::Dev); }
+        if !manifest.dependencies.is_empty() {
+            realms.push(Realm::Shared);
+        }
+        if !manifest.server_dependencies.is_empty() {
+            realms.push(Realm::Server);
+        }
+        if !manifest.dev_dependencies.is_empty() {
+            realms.push(Realm::Dev);
+        }
         println!("Detected realms to vendor: {:?}", realms);
     }
 
@@ -36,7 +44,7 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     if args.locked && !lockfile_path.exists() {
         bail!("--locked flag was specified, but wally.lock was not found.");
     }
-    
+
     let lockfile = if lockfile_path.exists() {
         Some(Lockfile::load(&lockfile_path)?)
     } else {
@@ -47,9 +55,25 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     };
     let package_versions = lockfile.as_ref().map(|l| l.get_package_versions());
 
-    let shared_dest = args.shared_dir.as_deref().unwrap_or(&args.vendor_dir);
-    let server_dest = args.server_dir.as_deref().unwrap_or(&args.vendor_dir);
-    let dev_dest = args.dev_dir.as_deref().unwrap_or(&args.vendor_dir);
+    let vendor_base = &args.vendor_dir;
+
+    let shared_dest = args
+        .shared_dir
+        .clone()
+        .or_else(|| config.wally_vendor.shared_dir.clone())
+        .unwrap_or_else(|| vendor_base.clone());
+
+    let server_dest = args
+        .server_dir
+        .clone()
+        .or_else(|| config.wally_vendor.server_dir.clone())
+        .unwrap_or_else(|| vendor_base.clone());
+
+    let dev_dest = args
+        .dev_dir
+        .clone()
+        .or_else(|| config.wally_vendor.dev_dir.clone())
+        .unwrap_or_else(|| vendor_base.clone());
 
     let packages_root = args.packages_dir.parent().unwrap_or_else(|| Path::new("."));
     let server_packages_dir = packages_root.join("ServerPackages");
@@ -58,19 +82,19 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     if args.clean {
         let mut dirs_to_clean = HashSet::new();
         if realms.contains(&Realm::Shared) {
-            dirs_to_clean.insert(shared_dest);
+            dirs_to_clean.insert(shared_dest.clone());
         }
         if realms.contains(&Realm::Server) {
-            dirs_to_clean.insert(server_dest);
+            dirs_to_clean.insert(server_dest.clone());
         }
         if realms.contains(&Realm::Dev) {
-            dirs_to_clean.insert(dev_dest);
+            dirs_to_clean.insert(dev_dest.clone());
         }
 
         for dir in dirs_to_clean {
             if dir.exists() {
-                fs::remove_dir_all(dir)
-                    .with_context(|| format!("Failed to remove vendor directory {:?}", dir))?;
+                fs::remove_dir_all(&dir)
+                    .with_context(|| format!("Failed to remove vendor directory {:?}", &dir))?;
             }
         }
     }
@@ -80,13 +104,13 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     let mut total_dependencies = 0;
 
     if realms.contains(&Realm::Shared) {
-        fs::create_dir_all(shared_dest)
-            .with_context(|| format!("Failed to create vendor directory {:?}", shared_dest))?;
+        fs::create_dir_all(&shared_dest)
+            .with_context(|| format!("Failed to create vendor directory {:?}", &shared_dest))?;
         total_dependencies += manifest.dependencies.len();
         let (vendored, missing) = vendor_packages(
             &manifest.dependencies,
             &args.packages_dir,
-            shared_dest,
+            &shared_dest,
             package_versions.as_ref(),
         )?;
         total_vendored += vendored;
@@ -94,13 +118,13 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     }
 
     if realms.contains(&Realm::Server) {
-        fs::create_dir_all(server_dest)
-            .with_context(|| format!("Failed to create vendor directory {:?}", server_dest))?;
+        fs::create_dir_all(&server_dest)
+            .with_context(|| format!("Failed to create vendor directory {:?}", &server_dest))?;
         total_dependencies += manifest.server_dependencies.len();
         let (vendored, missing) = vendor_packages(
             &manifest.server_dependencies,
             &server_packages_dir,
-            server_dest,
+            &server_dest,
             package_versions.as_ref(),
         )?;
         total_vendored += vendored;
@@ -108,13 +132,13 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     }
 
     if realms.contains(&Realm::Dev) {
-        fs::create_dir_all(dev_dest)
-            .with_context(|| format!("Failed to create vendor directory {:?}", dev_dest))?;
+        fs::create_dir_all(&dev_dest)
+            .with_context(|| format!("Failed to create vendor directory {:?}", &dev_dest))?;
         total_dependencies += manifest.dev_dependencies.len();
         let (vendored, missing) = vendor_packages(
             &manifest.dev_dependencies,
             &dev_packages_dir,
-            dev_dest,
+            &dev_dest,
             package_versions.as_ref(),
         )?;
         total_vendored += vendored;
@@ -175,10 +199,11 @@ fn vendor_packages(
     let mut copy_operations = HashMap::new(); // Use HashMap to deduplicate by source path
 
     for (alias, package_spec) in dependencies {
-        let package_name = package_spec.split('@').next().unwrap_or(package_spec);
+        let package_name = package_spec.split("@").next().unwrap_or(package_spec);
 
         let final_spec = if let Some(versions) = package_versions {
-            versions.get(package_name)
+            versions
+                .get(package_name)
                 .map(|version| format!("{}@{}", package_name, version))
                 .unwrap_or_else(|| package_spec.clone())
         } else {
@@ -187,7 +212,10 @@ fn vendor_packages(
 
         match utils::find_wally_package(source_base_dir, &final_spec) {
             Some(source_path) => {
-                copy_operations.entry(source_path).or_insert_with(Vec::new).push(alias.clone());
+                copy_operations
+                    .entry(source_path)
+                    .or_insert_with(Vec::new)
+                    .push(alias.clone());
             }
             None => {
                 missing_packages.push((alias.clone(), package_spec.clone()));
