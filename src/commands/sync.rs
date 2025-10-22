@@ -1,4 +1,4 @@
-use crate::cli::{Realm, SyncVendorArgs};
+use crate::cli::{Realm, SyncArgs};
 use crate::config::Manifest;
 use crate::lockfile::Lockfile;
 use crate::utils;
@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 use rayon::prelude::*;
 
-pub fn execute(args: SyncVendorArgs) -> Result<()> {
+pub fn execute(args: SyncArgs) -> Result<()> {
     if let Some(jobs) = args.jobs {
         if jobs > 0 {
             rayon::ThreadPoolBuilder::new()

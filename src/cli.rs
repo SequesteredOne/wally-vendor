@@ -23,12 +23,12 @@ pub enum Realm {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    #[command(name = "sync-vendor")]
-    SyncVendor(SyncVendorArgs),
+    #[command(name = "sync")]
+    Sync(SyncArgs),
 }
 
 #[derive(Parser)]
-pub struct SyncVendorArgs {
+pub struct SyncArgs {
     /// Path to dependency configuration file
     #[arg(short, long)]
     pub deps: Option<PathBuf>,
