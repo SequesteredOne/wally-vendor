@@ -20,17 +20,17 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     }
 
     let start = Instant::now();
-    let realms = args.realms.clone();
-
-    if realms.is_empty() {
-        println!(
-            "No realms specified to vendor. Use the --realm flag to select which dependencies to vendor."
-        );
-        return Ok(());
-    }
 
     let config_path = find_config_path(&args.deps)?;
     let manifest = Manifest::load(&config_path)?;
+
+    let mut realms = args.realms.clone();
+    if realms.is_empty() {
+        if !manifest.dependencies.is_empty() { realms.push(Realm::Shared); }
+        if !manifest.server_dependencies.is_empty() { realms.push(Realm::Server); }
+        if !manifest.dev_dependencies.is_empty() { realms.push(Realm::Dev); }
+        println!("Detected realms to vendor: {:?}", realms);
+    }
 
     let lockfile_path = PathBuf::from("wally.lock");
     if args.locked && !lockfile_path.exists() {
