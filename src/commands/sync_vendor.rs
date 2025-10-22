@@ -33,6 +33,10 @@ pub fn execute(args: SyncVendorArgs) -> Result<()> {
     let manifest = Manifest::load(&config_path)?;
 
     let lockfile_path = PathBuf::from("wally.lock");
+    if args.locked && !lockfile_path.exists() {
+        bail!("--locked flag was specified, but wally.lock was not found.");
+    }
+    
     let lockfile = if lockfile_path.exists() {
         Some(Lockfile::load(&lockfile_path)?)
     } else {

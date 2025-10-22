@@ -68,4 +68,8 @@ pub struct SyncVendorArgs {
     /// Remove existing vendor directory before syncing
     #[arg(long)]
     pub clean: bool,
+
+    /// Fail if wally.lock is not found
+    #[arg(long)]
+    pub locked: bool,
 }
