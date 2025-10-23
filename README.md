@@ -4,6 +4,33 @@ A fast and simple utility for vendoring [Wally](https://github.com/UpliftGames/w
 
 *__Note:__ This tool is not an official affiliate of [Wally](https://github.com/UpliftGames/wally). It is, however, meant to interact with the outputs of Wally.*
 
+## Installation
+
+### With [Rokit](https://github.com/rojo-rbx/rokit)
+
+```bash
+rokit add sequesteredone/wally-vendor
+rokit install
+```
+
+### With [Crates.io](https://crates.io/)
+
+```bash
+cargo install wally-vendor
+```
+
+### From GitHub Releases
+
+Pre-built binaries for Windows, Linux, and macOS are available on the [Releases page](https://github.com/SequesteredOne/wally-vendor/releases).
+
+### From Source
+
+After cloning the repository run:
+
+```bash
+cargo install --path .
+```
+
 ## Common Usage
 
 *(For a full list of options, please use `wally-vendor --help`, or `wally-vendor <COMMAND> --help`)*
