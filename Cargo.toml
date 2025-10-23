@@ -3,15 +3,14 @@ name = "wally-vendor"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Vendor Wally dependencies"
+description = "A fast and simple utility for vendoring Wally-installed dependencies"
 repository = "https://github.com/SequesteredOne/wally-vendor"
 readme = "README.md"
+keywords = ["wally", "roblox", "vendor", "cli"]
 
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.49", features = ["derive"]}
-hyperfine = "1.19.0"
-just = "1.43.0"
 rayon = "1.11.0"
 semver = "1.0.27"
 serde = { version = "1.0.228", features = ["derive"] }
