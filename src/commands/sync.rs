@@ -3,11 +3,11 @@ use crate::config::Config;
 use crate::lockfile::Lockfile;
 use crate::utils;
 use anyhow::{Context, Result, bail};
+use rayon::prelude::*;
 use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use rayon::prelude::*;
 
 pub fn execute(args: SyncArgs) -> Result<()> {
     if let Some(jobs) = args.jobs {
@@ -151,7 +151,7 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     }
 
     all_missing.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-    
+
     let duration = start.elapsed();
 
     if all_missing.is_empty() {
@@ -236,7 +236,7 @@ fn vendor_packages(
             eprintln!("A package copy operation failed: {:?}", e);
         }
     }
-        
+
     let packages_vendored = dependencies.len() - missing_packages.len();
 
     Ok((packages_vendored, missing_packages))
