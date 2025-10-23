@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -26,7 +26,7 @@ pub enum Commands {
     Sync(SyncArgs),
 }
 
-#[derive(Parser)]
+#[derive(Args)]
 pub struct SyncArgs {
     /// Path to dependency configuration file
     #[arg(short, long)]
