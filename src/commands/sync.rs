@@ -276,12 +276,7 @@ fn copy_package(
 
     let vendor_target = vendor_dir.join(relative_path);
 
-    if !vendor_target.exists() {
-        if let Some(parent) = vendor_target.parent() {
-            fs::create_dir_all(parent)?;
-        }
-        utils::copy_dir_recursive(source_path, &vendor_target)?;
-    }
+    utils::copy_dir_recursive(source_path, &vendor_target)?;
 
     for alias in aliases {
         let redirector_lua = packages_dir.join(format!("{}.lua", alias));
