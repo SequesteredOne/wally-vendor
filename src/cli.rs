@@ -34,7 +34,7 @@ pub struct SyncArgs {
     pub deps: Option<PathBuf>,
 
     /// The dependency realms to vendor. Can be specified multiple times (ex. --realm Server --realm Dev --realm Shared to include all).
-    #[arg(long = "realm", value_enum)]
+    #[arg(long = "realm", value_enum, ignore_case = true)]
     pub realms: Vec<Realm>,
 
     /// Path to Wally packages directory
