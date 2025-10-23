@@ -57,7 +57,7 @@ pub struct SyncArgs {
     #[arg(long)]
     pub dev_dir: Option<PathBuf>,
 
-    // The number of parallel jobs to use for vendoring
+    /// The number of parallel jobs to use for vendoring
     #[arg(short, long)]
     pub jobs: Option<usize>,
 
