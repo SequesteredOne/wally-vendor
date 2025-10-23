@@ -3,7 +3,7 @@ name = "wally-vendor"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Vendor and verify Wally dependencies for .rbxm releases"
+description = "Vendor Wally dependencies"
 repository = "https://github.com/SequesteredOne/wally-vendor"
 readme = "README.md"
 
