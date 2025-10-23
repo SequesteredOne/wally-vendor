@@ -21,6 +21,7 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     let start = Instant::now();
 
     let config_path = find_config_path(&args.deps)?;
+    let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
     let config = Config::load(&config_path)
         .with_context(|| format!("Failed to load config from {:?}", config_path))?;
     let manifest = config.manifest;
@@ -39,7 +40,7 @@ pub fn execute(args: SyncArgs) -> Result<()> {
         println!("Detected realms to vendor: {:?}", realms);
     }
 
-    let lockfile_path = PathBuf::from("wally.lock");
+    let lockfile_path = config_dir.join("wally.lock");
     if args.locked && !lockfile_path.exists() {
         bail!("--locked flag was specified, but wally.lock was not found.");
     }
@@ -54,30 +55,36 @@ pub fn execute(args: SyncArgs) -> Result<()> {
     };
     let package_versions = lockfile.as_ref().map(|l| l.get_package_versions());
 
-    let vendor_base = &args.vendor_dir;
+    let vendor_base = config_dir.join(&args.vendor_dir);
 
     let shared_dest = args
         .shared_dir
         .clone()
         .or_else(|| config.wally_vendor.shared_dir.clone())
+        .map(|p| config_dir.join(p))
         .unwrap_or_else(|| vendor_base.clone());
 
     let server_dest = args
         .server_dir
         .clone()
         .or_else(|| config.wally_vendor.server_dir.clone())
+        .map(|p| config_dir.join(p))
         .unwrap_or_else(|| vendor_base.clone());
 
     let dev_dest = args
         .dev_dir
         .clone()
         .or_else(|| config.wally_vendor.dev_dir.clone())
+        .map(|p| config_dir.join(p))
         .unwrap_or_else(|| vendor_base.clone());
 
-    let packages_root = args.packages_dir.parent().unwrap_or_else(|| Path::new("."));
-    let server_packages_dir = packages_root.join("ServerPackages");
-    let dev_packages_dir = packages_root.join("DevPackages");
-
+    let packages_dir = config_dir.join(&args.packages_dir);
+    let server_packages_dir = packages_dir
+        .parent()
+        .unwrap_or_else(|| Path::new("."))
+        .join("ServerPackages");
+    let dev_packages_dir = packages_dir.parent().unwrap_or_else(|| Path::new(".")).join("DevPackages");
+    
     if args.clean {
         let mut dirs_to_clean = HashSet::new();
         if realms.contains(&Realm::Shared) {
@@ -108,7 +115,7 @@ pub fn execute(args: SyncArgs) -> Result<()> {
         total_dependencies += manifest.dependencies.len();
         let (vendored, missing) = vendor_packages(
             &manifest.dependencies,
-            &args.packages_dir,
+            &packages_dir,
             &shared_dest,
             package_versions.as_ref(),
         )?;
