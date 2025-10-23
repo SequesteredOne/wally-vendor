@@ -10,189 +10,203 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub fn execute(args: SyncArgs) -> Result<()> {
-    if let Some(jobs) = args.jobs
-        && jobs > 0 {
+    let pool = if let Some(jobs) = args.jobs.filter(|&j| j > 0) {
+        Some(
             rayon::ThreadPoolBuilder::new()
                 .num_threads(jobs)
-                .build_global()
-                .with_context(|| "Failed to initialize global thread pool")?;
-        }
-
-    let start = Instant::now();
-
-    let config_path = find_config_path(&args.deps)?;
-    let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
-    let config = Config::load(&config_path)
-        .with_context(|| format!("Failed to load config from {:?}", config_path))?;
-    let manifest = config.manifest;
-
-    let mut realms = args.realms.clone();
-    if realms.is_empty() {
-        if !manifest.dependencies.is_empty() {
-            realms.push(Realm::Shared);
-        }
-        if !manifest.server_dependencies.is_empty() {
-            realms.push(Realm::Server);
-        }
-        if !manifest.dev_dependencies.is_empty() {
-            realms.push(Realm::Dev);
-        }
-        println!("Detected realms to vendor: {:?}", realms);
-    }
-
-    let lockfile_path = config_dir.join("wally.lock");
-    if args.locked && !lockfile_path.exists() {
-        bail!("--locked flag was specified, but wally.lock was not found.");
-    }
-
-    let lockfile = if lockfile_path.exists() {
-        Some(Lockfile::load(&lockfile_path)?)
+                .build()
+                .context("Failed to build Rayon thread pool")?,
+        )
     } else {
-        println!(
-            "wally.lock not found, proceeding without it. Vendored packages may not be deterministic"
-        );
         None
     };
-    let package_versions = lockfile.as_ref().map(|l| l.get_package_versions());
 
-    let vendor_base = config_dir.join(&args.vendor_dir);
+    let main_logic = || -> Result<()> {
+        let start = Instant::now();
 
-    let shared_dest = args
-        .shared_dir
-        .clone()
-        .or_else(|| config.wally_vendor.shared_dir.clone())
-        .map(|p| config_dir.join(p))
-        .unwrap_or_else(|| vendor_base.clone());
+        let config_path = find_config_path(&args.deps)?;
+        let config_dir = config_path.parent().unwrap_or_else(|| Path::new("."));
+        let config = Config::load(&config_path)
+            .with_context(|| format!("Failed to load config from {:?}", config_path))?;
+        let manifest = config.manifest;
 
-    let server_dest = args
-        .server_dir
-        .clone()
-        .or_else(|| config.wally_vendor.server_dir.clone())
-        .map(|p| config_dir.join(p))
-        .unwrap_or_else(|| vendor_base.clone());
-
-    let dev_dest = args
-        .dev_dir
-        .clone()
-        .or_else(|| config.wally_vendor.dev_dir.clone())
-        .map(|p| config_dir.join(p))
-        .unwrap_or_else(|| vendor_base.clone());
-
-    let packages_dir = config_dir.join(&args.packages_dir);
-    let server_packages_dir = packages_dir
-        .parent()
-        .unwrap_or_else(|| Path::new("."))
-        .join("ServerPackages");
-    let dev_packages_dir = packages_dir.parent().unwrap_or_else(|| Path::new(".")).join("DevPackages");
-    
-    if args.clean {
-        let mut dirs_to_clean = HashSet::new();
-        if realms.contains(&Realm::Shared) {
-            dirs_to_clean.insert(shared_dest.clone());
-        }
-        if realms.contains(&Realm::Server) {
-            dirs_to_clean.insert(server_dest.clone());
-        }
-        if realms.contains(&Realm::Dev) {
-            dirs_to_clean.insert(dev_dest.clone());
+        let mut realms = args.realms.clone();
+        if realms.is_empty() {
+            if !manifest.dependencies.is_empty() {
+                realms.push(Realm::Shared);
+            }
+            if !manifest.server_dependencies.is_empty() {
+                realms.push(Realm::Server);
+            }
+            if !manifest.dev_dependencies.is_empty() {
+                realms.push(Realm::Dev);
+            }
+            println!("Detected realms to vendor: {:?}", realms);
         }
 
-        for dir in dirs_to_clean {
-            if dir.exists() {
-                fs::remove_dir_all(&dir)
-                    .with_context(|| format!("Failed to remove vendor directory {:?}", &dir))?;
+        let lockfile_path = config_dir.join("wally.lock");
+        if args.locked && !lockfile_path.exists() {
+            bail!("--locked flag was specified, but wally.lock was not found.");
+        }
+
+        let lockfile = if lockfile_path.exists() {
+            Some(Lockfile::load(&lockfile_path)?)
+        } else {
+            println!(
+                "wally.lock not found, proceeding without it. Vendored packages may not be deterministic"
+            );
+            None
+        };
+        let package_versions = lockfile.as_ref().map(|l| l.get_package_versions());
+
+        let vendor_base = config_dir.join(&args.vendor_dir);
+
+        let shared_dest = args
+            .shared_dir
+            .clone()
+            .or_else(|| config.wally_vendor.shared_dir.clone())
+            .map(|p| config_dir.join(p))
+            .unwrap_or_else(|| vendor_base.clone());
+
+        let server_dest = args
+            .server_dir
+            .clone()
+            .or_else(|| config.wally_vendor.server_dir.clone())
+            .map(|p| config_dir.join(p))
+            .unwrap_or_else(|| vendor_base.clone());
+
+        let dev_dest = args
+            .dev_dir
+            .clone()
+            .or_else(|| config.wally_vendor.dev_dir.clone())
+            .map(|p| config_dir.join(p))
+            .unwrap_or_else(|| vendor_base.clone());
+
+        let packages_dir = config_dir.join(&args.packages_dir);
+        let server_packages_dir = packages_dir
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("ServerPackages");
+        let dev_packages_dir = packages_dir
+            .parent()
+            .unwrap_or_else(|| Path::new("."))
+            .join("DevPackages");
+
+        if args.clean {
+            let mut dirs_to_clean = HashSet::new();
+            if realms.contains(&Realm::Shared) {
+                dirs_to_clean.insert(shared_dest.clone());
+            }
+            if realms.contains(&Realm::Server) {
+                dirs_to_clean.insert(server_dest.clone());
+            }
+            if realms.contains(&Realm::Dev) {
+                dirs_to_clean.insert(dev_dest.clone());
+            }
+
+            for dir in dirs_to_clean {
+                if dir.exists() {
+                    fs::remove_dir_all(&dir)
+                        .with_context(|| format!("Failed to remove vendor directory {:?}", &dir))?;
+                }
             }
         }
-    }
 
-    let mut total_vendored = 0;
-    let mut all_missing = Vec::new();
-    let mut total_dependencies = 0;
+        let mut total_vendored = 0;
+        let mut all_missing = Vec::new();
+        let mut total_dependencies = 0;
 
-    if realms.contains(&Realm::Shared) {
-        fs::create_dir_all(&shared_dest)
-            .with_context(|| format!("Failed to create vendor directory {:?}", &shared_dest))?;
-        total_dependencies += manifest.dependencies.len();
-        let (vendored, missing) = vendor_packages(
-            &manifest.dependencies,
-            &packages_dir,
-            &shared_dest,
-            package_versions.as_ref(),
-        )?;
-        total_vendored += vendored;
-        all_missing.extend(missing);
-    }
-
-    if realms.contains(&Realm::Server) {
-        fs::create_dir_all(&server_dest)
-            .with_context(|| format!("Failed to create vendor directory {:?}", &server_dest))?;
-        total_dependencies += manifest.server_dependencies.len();
-        let (vendored, missing) = vendor_packages(
-            &manifest.server_dependencies,
-            &server_packages_dir,
-            &server_dest,
-            package_versions.as_ref(),
-        )?;
-        total_vendored += vendored;
-        all_missing.extend(missing);
-    }
-
-    if realms.contains(&Realm::Dev) {
-        fs::create_dir_all(&dev_dest)
-            .with_context(|| format!("Failed to create vendor directory {:?}", &dev_dest))?;
-        total_dependencies += manifest.dev_dependencies.len();
-        let (vendored, missing) = vendor_packages(
-            &manifest.dev_dependencies,
-            &dev_packages_dir,
-            &dev_dest,
-            package_versions.as_ref(),
-        )?;
-        total_vendored += vendored;
-        all_missing.extend(missing);
-    }
-
-    if total_dependencies == 0 {
-        println!("No packages to vendor.");
-        return Ok(());
-    }
-
-    all_missing.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
-
-    let duration = start.elapsed();
-
-    if all_missing.is_empty() {
-        println!(
-            "Successfully vendored {}/{} packages in {}ms",
-            total_vendored,
-            total_dependencies,
-            duration.as_millis()
-        );
-    } else {
-        eprintln!("Missing {} package(s):", all_missing.len());
-        for (alias, spec) in &all_missing {
-            eprintln!("    {} ({})", alias, spec);
+        if realms.contains(&Realm::Shared) {
+            fs::create_dir_all(&shared_dest)
+                .with_context(|| format!("Failed to create vendor directory {:?}", &shared_dest))?;
+            total_dependencies += manifest.dependencies.len();
+            let (vendored, missing) = vendor_packages(
+                &manifest.dependencies,
+                &packages_dir,
+                &shared_dest,
+                package_versions.as_ref(),
+            )?;
+            total_vendored += vendored;
+            all_missing.extend(missing);
         }
-        eprintln!();
 
-        eprintln!(
-            "Vendored {}/{} packages in {}ms",
-            total_vendored,
-            total_dependencies,
-            duration.as_millis()
-        );
+        if realms.contains(&Realm::Server) {
+            fs::create_dir_all(&server_dest)
+                .with_context(|| format!("Failed to create vendor directory {:?}", &server_dest))?;
+            total_dependencies += manifest.server_dependencies.len();
+            let (vendored, missing) = vendor_packages(
+                &manifest.server_dependencies,
+                &server_packages_dir,
+                &server_dest,
+                package_versions.as_ref(),
+            )?;
+            total_vendored += vendored;
+            all_missing.extend(missing);
+        }
 
-        eprintln!();
-        eprintln!("Hint: Try running `wally install` to fetch the missing dependnecies");
+        if realms.contains(&Realm::Dev) {
+            fs::create_dir_all(&dev_dest)
+                .with_context(|| format!("Failed to create vendor directory {:?}", &dev_dest))?;
+            total_dependencies += manifest.dev_dependencies.len();
+            let (vendored, missing) = vendor_packages(
+                &manifest.dev_dependencies,
+                &dev_packages_dir,
+                &dev_dest,
+                package_versions.as_ref(),
+            )?;
+            total_vendored += vendored;
+            all_missing.extend(missing);
+        }
 
-        if args.strict {
-            bail!(
-                "Strict mode enabled: {} package(s) missing",
-                all_missing.len()
+        if total_dependencies == 0 {
+            println!("No packages to vendor.");
+            return Ok(());
+        }
+
+        all_missing.sort_by(|a, b| a.0.cmp(&b.0).then(a.1.cmp(&b.1)));
+
+        let duration = start.elapsed();
+
+        if all_missing.is_empty() {
+            println!(
+                "Successfully vendored {}/{} packages in {}ms",
+                total_vendored,
+                total_dependencies,
+                duration.as_millis()
             );
-        }
-    }
+        } else {
+            eprintln!("Missing {} package(s):", all_missing.len());
+            for (alias, spec) in &all_missing {
+                eprintln!("    {} ({})", alias, spec);
+            }
+            eprintln!();
 
-    Ok(())
+            eprintln!(
+                "Vendored {}/{} packages in {}ms",
+                total_vendored,
+                total_dependencies,
+                duration.as_millis()
+            );
+
+            eprintln!();
+            eprintln!("Hint: Try running `wally install` to fetch the missing dependencies");
+
+            if args.strict {
+                bail!(
+                    "Strict mode enabled: {} package(s) missing",
+                    all_missing.len()
+                );
+            }
+        }
+
+        Ok(())
+    };
+
+    if let Some(p) = pool {
+        p.install(main_logic)
+    } else {
+        main_logic()
+    }
 }
 
 fn vendor_packages(
@@ -202,7 +216,7 @@ fn vendor_packages(
     package_versions: Option<&HashMap<String, String>>,
 ) -> Result<(usize, Vec<(String, String)>)> {
     let mut missing_packages = Vec::new();
-    let mut copy_operations = HashMap::new(); // Use HashMap to deduplicate by source path
+    let mut copy_operations: HashMap<PathBuf, Vec<String>> = HashMap::new();
 
     for (alias, package_spec) in dependencies {
         let package_name = package_spec.split("@").next().unwrap_or(package_spec);
