@@ -10,14 +10,13 @@ use std::path::{Path, PathBuf};
 use std::time::Instant;
 
 pub fn execute(args: SyncArgs) -> Result<()> {
-    if let Some(jobs) = args.jobs {
-        if jobs > 0 {
+    if let Some(jobs) = args.jobs
+        && jobs > 0 {
             rayon::ThreadPoolBuilder::new()
                 .num_threads(jobs)
                 .build_global()
                 .with_context(|| "Failed to initialize global thread pool")?;
         }
-    }
 
     let start = Instant::now();
 

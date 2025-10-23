@@ -109,11 +109,10 @@ fn should_skip_copy(src: &Path, dst: &Path) -> Result<bool> {
         return Ok(false);
     }
 
-    if let (Ok(src_mod), Ok(dst_mod)) = (src_meta.modified(), dst_meta.modified()) {
-        if dst_mod >= src_mod {
+    if let (Ok(src_mod), Ok(dst_mod)) = (src_meta.modified(), dst_meta.modified())
+        && dst_mod >= src_mod {
             return Ok(true);
         }
-    }
 
     Ok(false)
 }

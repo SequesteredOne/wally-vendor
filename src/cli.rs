@@ -8,7 +8,6 @@ use std::path::PathBuf;
     about = "Vendor wally packages",
     long_about = None
 )]
-
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
