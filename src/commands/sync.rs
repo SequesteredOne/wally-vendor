@@ -234,7 +234,7 @@ fn vendor_packages(
             Some(source_path) => {
                 copy_operations
                     .entry(source_path)
-                    .or_insert_with(Vec::new)
+                    .or_default()
                     .push(alias.clone());
             }
             None => {
