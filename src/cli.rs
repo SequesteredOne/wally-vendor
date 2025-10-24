@@ -1,4 +1,4 @@
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Args, Parser, Subcommand, ValueEnum};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -8,7 +8,6 @@ use std::path::PathBuf;
     about = "Vendor wally packages",
     long_about = None
 )]
-
 pub struct Cli {
     #[command(subcommand)]
     pub command: Commands,
@@ -23,18 +22,18 @@ pub enum Realm {
 
 #[derive(Subcommand)]
 pub enum Commands {
-    #[command(name = "sync-vendor")]
-    SyncVendor(SyncVendorArgs),
+    #[command(name = "sync")]
+    Sync(SyncArgs),
 }
 
-#[derive(Parser)]
-pub struct SyncVendorArgs {
+#[derive(Args)]
+pub struct SyncArgs {
     /// Path to dependency configuration file
     #[arg(short, long)]
     pub deps: Option<PathBuf>,
 
     /// The dependency realms to vendor. Can be specified multiple times (ex. --realm Server --realm Dev --realm Shared to include all).
-    #[arg(long = "realm", value_enum)]
+    #[arg(long = "realm", value_enum, ignore_case = true)]
     pub realms: Vec<Realm>,
 
     /// Path to Wally packages directory
@@ -57,6 +56,10 @@ pub struct SyncVendorArgs {
     #[arg(long)]
     pub dev_dir: Option<PathBuf>,
 
+    /// The number of parallel jobs to use for vendoring
+    #[arg(short, long)]
+    pub jobs: Option<usize>,
+
     /// Fail if any required dependency is missing
     #[arg(short, long)]
     pub strict: bool,
@@ -64,4 +67,8 @@ pub struct SyncVendorArgs {
     /// Remove existing vendor directory before syncing
     #[arg(long)]
     pub clean: bool,
+
+    /// Fail if wally.lock is not found
+    #[arg(long)]
+    pub locked: bool,
 }

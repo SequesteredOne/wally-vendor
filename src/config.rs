@@ -2,9 +2,9 @@ use anyhow::{Context, Result};
 use serde::Deserialize;
 use std::collections::HashMap;
 use std::fs;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
-#[derive(Debug, Deserialize, Default)]
+#[derive(Debug, Deserialize, Default, Clone)]
 #[serde(rename_all = "kebab-case")]
 pub struct Manifest {
     #[serde(default)]
@@ -17,7 +17,25 @@ pub struct Manifest {
     pub dev_dependencies: HashMap<String, String>,
 }
 
-impl Manifest {
+#[derive(Debug, Deserialize, Default, Clone)]
+#[serde(rename_all = "kebab-case")]
+pub struct VendorConfig {
+    pub shared_dir: Option<PathBuf>,
+    pub server_dir: Option<PathBuf>,
+    pub dev_dir: Option<PathBuf>,
+}
+
+#[derive(Debug, Deserialize, Default, Clone)]
+#[serde(rename_all = "kebab-case")]
+pub struct Config {
+    #[serde(flatten)]
+    pub manifest: Manifest,
+
+    #[serde(default)]
+    pub wally_vendor: VendorConfig,
+}
+
+impl Config {
     pub fn load(path: impl AsRef<Path>) -> Result<Self> {
         let path = path.as_ref();
         let content = fs::read_to_string(path)

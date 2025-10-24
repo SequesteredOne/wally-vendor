@@ -3,16 +3,21 @@ name = "wally-vendor"
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-description = "Vendor and verify Wally dependencies for .rbxm releases"
+description = "A fast and simple utility for vendoring Wally-installed dependencies"
 repository = "https://github.com/SequesteredOne/wally-vendor"
 readme = "README.md"
+keywords = ["wally", "roblox", "vendor", "cli"]
 
 [dependencies]
 anyhow = "1.0.100"
 clap = { version = "4.5.49", features = ["derive"]}
+<<<<<<< HEAD
 futures = "0.3.31"
 hyperfine = "1.19.0"
 just = "1.43.0"
+=======
+rayon = "1.11.0"
+>>>>>>> main
 semver = "1.0.27"
 serde = { version = "1.0.228", features = ["derive"] }
 tokio = { version = "1.48.0", features = ["full"] }

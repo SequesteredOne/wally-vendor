@@ -1,1 +1,1 @@
-pub mod sync_vendor;
+pub mod sync;
